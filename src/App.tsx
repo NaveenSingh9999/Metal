@@ -5,11 +5,13 @@ import { LoginScreen } from './components/Auth';
 import { ChatView } from './components/Chat';
 import { SettingsModal } from './components/Settings';
 import { NewConversationModal } from './components/Modals';
+import { Shield } from 'lucide-react';
 
 function App() {
   const {
     isAuthenticated,
     hasExistingIdentity,
+    isCheckingIdentity,
     currentUser,
     authError,
     conversations,
@@ -41,7 +43,7 @@ function App() {
   // Check for existing identity on mount
   useEffect(() => {
     checkExistingIdentity();
-  }, [checkExistingIdentity]);
+  }, []);
 
   // Get current conversation messages
   const currentMessages = selectedConversationId 
@@ -78,6 +80,20 @@ function App() {
         .filter(p => p.isTyping && p.currentConversationId === selectedConversationId)
         .map(p => p.metalId)
     : [];
+
+  // Loading state while checking for existing identity
+  if (isCheckingIdentity) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center animate-pulse">
+            <Shield className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-zinc-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Not authenticated - show login
   if (!isAuthenticated) {

@@ -13,6 +13,7 @@ interface AppState {
   // Auth state
   isAuthenticated: boolean;
   hasExistingIdentity: boolean;
+  isCheckingIdentity: boolean;
   currentUser: UserIdentity | null;
   authError: string | null;
 
@@ -66,6 +67,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   hasExistingIdentity: false,
   currentUser: null,
   authError: null,
+  isCheckingIdentity: true,
   
   conversations: [],
   contacts: [],
@@ -81,8 +83,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Check if user has existing identity
   checkExistingIdentity: async () => {
-    const hasIdentity = await identityService.hasIdentity();
-    set({ hasExistingIdentity: hasIdentity });
+    set({ isCheckingIdentity: true });
+    try {
+      const hasIdentity = await identityService.hasIdentity();
+      set({ hasExistingIdentity: hasIdentity, isCheckingIdentity: false });
+    } catch {
+      set({ isCheckingIdentity: false });
+    }
   },
 
   // Login with password

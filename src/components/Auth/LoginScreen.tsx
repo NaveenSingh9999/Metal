@@ -1,5 +1,5 @@
 // Metal Login Screen Component
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Shield, Lock, Eye, EyeOff, Key } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -23,6 +23,13 @@ export function LoginScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState('');
+
+  // Update mode when hasExistingIdentity changes
+  useEffect(() => {
+    if (hasExistingIdentity) {
+      setMode('login');
+    }
+  }, [hasExistingIdentity]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,31 +80,38 @@ export function LoginScreen({
 
         {/* Form Card */}
         <div className="bg-zinc-900 rounded-2xl border border-zinc-800 p-6 shadow-xl">
-          {/* Mode Toggle */}
-          {!hasExistingIdentity && (
-            <div className="flex mb-6 bg-zinc-800 rounded-lg p-1">
-              <button
-                onClick={() => setMode('login')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-                  mode === 'login'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Unlock
-              </button>
-              <button
-                onClick={() => setMode('create')}
-                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-                  mode === 'create'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Create Identity
-              </button>
-            </div>
-          )}
+          {/* Title based on mode */}
+          <h2 className="text-xl font-semibold text-white mb-6 text-center">
+            {hasExistingIdentity && mode === 'login' 
+              ? 'Welcome Back' 
+              : mode === 'login' 
+                ? 'Unlock Identity' 
+                : 'Create New Identity'}
+          </h2>
+
+          {/* Mode Toggle - always show if has existing identity OR if in create mode */}
+          <div className="flex mb-6 bg-zinc-800 rounded-lg p-1">
+            <button
+              onClick={() => setMode('login')}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
+                mode === 'login'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              {hasExistingIdentity ? 'Unlock' : 'Login'}
+            </button>
+            <button
+              onClick={() => setMode('create')}
+              className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
+                mode === 'create'
+                  ? 'bg-emerald-600 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Create New
+            </button>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'create' && (
