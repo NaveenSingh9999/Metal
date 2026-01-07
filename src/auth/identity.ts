@@ -7,9 +7,11 @@ import { bytesToBase64, base64ToBytes, generateId } from '../crypto/utils';
 import { encryptedStorage } from '../storage/encrypted-db';
 import { squidCloud } from '../api/squid-cloud';
 import { messageSyncService } from '../api/message-sync';
+import { generateMetalId, metalIdService } from '../services/metal-id';
 
 export interface UserIdentity {
   id: string;
+  metalId: string;           // 5-digit unique Metal ID (e.g., "X7K2P")
   displayName: string;
   publicKey: string;
   createdAt: number;
@@ -58,9 +60,13 @@ class IdentityService {
     const keyPair = generateKeyPair();
     const serializedKeyPair = serializeKeyPair(keyPair);
 
+    // Generate unique Metal ID
+    const metalId = generateMetalId();
+
     // Create identity
     const identity: FullIdentity = {
       id: generateId(),
+      metalId,
       displayName,
       publicKey: serializedKeyPair.publicKey,
       keyPair: serializedKeyPair,
@@ -80,6 +86,14 @@ class IdentityService {
     // Set API key if provided
     if (apiKey) {
       await this.setApiKey(apiKey);
+      
+      // Register user in Metal network
+      await metalIdService.registerUser({
+        metalId,
+        displayName,
+        publicKey: serializedKeyPair.publicKey,
+        createdAt: Date.now()
+      });
     }
 
     return this.getPublicIdentity();
@@ -144,6 +158,7 @@ class IdentityService {
     }
     return {
       id: this.identity.id,
+      metalId: this.identity.metalId,
       displayName: this.identity.displayName,
       publicKey: this.identity.publicKey,
       createdAt: this.identity.createdAt

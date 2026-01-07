@@ -19,13 +19,16 @@ function App() {
     isSettingsOpen,
     isNewConversationOpen,
     settings,
+    presence,
     checkExistingIdentity,
     login,
     createIdentity,
     logout,
     selectConversation,
     sendMessage,
-    addContact,
+    setTyping,
+    addContactByMetalId,
+    findNearbyUsers,
     startConversation,
     openSettings,
     closeSettings,
@@ -69,6 +72,13 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
+  // Get typing users for current conversation
+  const typingContactIds = selectedConversationId 
+    ? Array.from(presence.values())
+        .filter(p => p.isTyping && p.currentConversationId === selectedConversationId)
+        .map(p => p.metalId)
+    : [];
+
   // Not authenticated - show login
   if (!isAuthenticated) {
     return (
@@ -89,9 +99,12 @@ function App() {
         contacts={contacts}
         messages={currentMessages}
         currentUserId={currentUser?.id || ''}
+        currentMetalId={currentUser?.metalId}
         selectedConversationId={selectedConversationId}
+        typingContactIds={typingContactIds}
         onSelectConversation={selectConversation}
         onSendMessage={sendMessage}
+        onTyping={setTyping}
         onNewConversation={openNewConversation}
         onOpenSettings={openSettings}
         onLock={logout}
@@ -103,6 +116,7 @@ function App() {
         settings={settings}
         onUpdateSettings={updateSettings}
         publicKey={currentUser?.publicKey || ''}
+        metalId={currentUser?.metalId}
         onDeleteAccount={deleteAccount}
         onExportData={handleExportData}
       />
@@ -111,11 +125,13 @@ function App() {
         isOpen={isNewConversationOpen}
         onClose={closeNewConversation}
         contacts={contacts}
+        currentMetalId={currentUser?.metalId}
         onStartConversation={(contactId) => {
           startConversation(contactId);
           closeNewConversation();
         }}
-        onAddContact={addContact}
+        onAddContactByMetalId={addContactByMetalId}
+        onFindNearbyUsers={findNearbyUsers}
       />
     </>
   );

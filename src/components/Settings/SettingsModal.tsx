@@ -12,9 +12,11 @@ import {
   Trash2,
   Download,
   Copy,
-  Check
+  Check,
+  Hash
 } from 'lucide-react';
 import type { AppSettings } from '../../types';
+import { formatMetalId } from '../../services/metal-id';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +24,7 @@ interface SettingsModalProps {
   settings: AppSettings;
   onUpdateSettings: (settings: Partial<AppSettings>) => void;
   publicKey: string;
+  metalId?: string;
   onDeleteAccount: () => void;
   onExportData: () => void;
 }
@@ -32,10 +35,12 @@ export function SettingsModal({
   settings,
   onUpdateSettings,
   publicKey,
+  metalId,
   onDeleteAccount,
   onExportData
 }: SettingsModalProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedMetalId, setCopiedMetalId] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!isOpen) return null;
@@ -44,6 +49,14 @@ export function SettingsModal({
     await navigator.clipboard.writeText(publicKey);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyMetalId = async () => {
+    if (metalId) {
+      await navigator.clipboard.writeText(metalId);
+      setCopiedMetalId(true);
+      setTimeout(() => setCopiedMetalId(false), 2000);
+    }
   };
 
   const handleDeleteAccount = () => {
@@ -77,8 +90,42 @@ export function SettingsModal({
               <Shield className="w-4 h-4" />
               Identity
             </h3>
+            
+            {/* Metal ID */}
+            {metalId && (
+              <div className="bg-zinc-800 rounded-lg p-3 mb-3">
+                <p className="text-xs text-zinc-500 mb-2 flex items-center gap-1">
+                  <Hash className="w-3 h-3" />
+                  Your Metal ID
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-2xl font-bold font-mono text-emerald-400 tracking-wider">
+                    {formatMetalId(metalId)}
+                  </span>
+                  <button
+                    onClick={copyMetalId}
+                    className="p-2 hover:bg-zinc-700 rounded transition-colors"
+                    title="Copy Metal ID"
+                  >
+                    {copiedMetalId ? (
+                      <Check className="w-4 h-4 text-emerald-500" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-zinc-400" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Share this ID with others to let them add you as a contact
+                </p>
+              </div>
+            )}
+            
+            {/* Public Key */}
             <div className="bg-zinc-800 rounded-lg p-3">
-              <p className="text-xs text-zinc-500 mb-2">Your Public Key</p>
+              <p className="text-xs text-zinc-500 mb-2 flex items-center gap-1">
+                <Key className="w-3 h-3" />
+                Your Public Key
+              </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 text-xs text-emerald-400 font-mono truncate">
                   {publicKey}

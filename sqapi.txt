@@ -1,5 +1,5 @@
 api = "cb_95781ff2f25242b504bbb7259fa254617b77702be2c555a37fd5c534bed8a10e"
-
+api2="cb_ec2b2ba793ba8e36b19cce9e161573630e3ff73d8bc478fac3867225a928f145"
 Authentication
 
 All API requests require authentication using your API key. Include your key in the request header for secure access.

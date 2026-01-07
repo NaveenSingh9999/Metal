@@ -2,17 +2,21 @@
 
 export interface Contact {
   id: string;
+  metalId: string;           // 5-digit unique Metal ID
   displayName: string;
   publicKey: string;
   avatar?: string;
   addedAt: number;
   lastSeen?: number;
+  isOnline?: boolean;
+  isTyping?: boolean;
 }
 
 export interface Message {
   id: string;
   conversationId: string;
   senderId: string;
+  senderMetalId?: string;     // Sender's Metal ID for display
   content: string;
   timestamp: number;
   type: 'text' | 'file' | 'system';

@@ -7,14 +7,18 @@ import {
   Plus, 
   Search,
   Lock,
-  Shield
+  Shield,
+  Copy,
+  Check
 } from 'lucide-react';
 import type { Conversation, Contact } from '../../types';
+import { formatMetalId } from '../../services/metal-id';
 
 interface SidebarProps {
   conversations: Conversation[];
   contacts: Contact[];
   currentUserId: string;
+  currentMetalId?: string;
   selectedConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
@@ -26,6 +30,7 @@ export function Sidebar({
   conversations,
   contacts,
   currentUserId,
+  currentMetalId,
   selectedConversationId,
   onSelectConversation,
   onNewConversation,
@@ -34,11 +39,25 @@ export function Sidebar({
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'chats' | 'contacts'>('chats');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyMetalId = async () => {
+    if (currentMetalId) {
+      await navigator.clipboard.writeText(currentMetalId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   const getContactName = (participantIds: string[]) => {
     const otherId = participantIds.find(id => id !== currentUserId);
     const contact = contacts.find(c => c.id === otherId);
     return contact?.displayName || 'Unknown';
+  };
+
+  const getContactForConversation = (participantIds: string[]): Contact | undefined => {
+    const otherId = participantIds.find(id => id !== currentUserId);
+    return contacts.find(c => c.id === otherId);
   };
 
   const filteredConversations = conversations.filter(conv => {
@@ -47,14 +66,15 @@ export function Sidebar({
   });
 
   const filteredContacts = contacts.filter(contact =>
-    contact.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+    contact.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    contact.metalId?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <div className="w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-zinc-800">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-emerald-500" />
             <h1 className="text-xl font-bold text-white">Metal</h1>
@@ -76,6 +96,29 @@ export function Sidebar({
             </button>
           </div>
         </div>
+
+        {/* Metal ID Display */}
+        {currentMetalId && (
+          <div className="mb-3 bg-zinc-800/50 rounded-lg p-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-500">Your ID:</span>
+              <span className="font-mono text-sm font-bold text-emerald-400">
+                {formatMetalId(currentMetalId)}
+              </span>
+            </div>
+            <button
+              onClick={handleCopyMetalId}
+              className="p-1.5 hover:bg-zinc-700 rounded transition-colors"
+              title="Copy Metal ID"
+            >
+              {copied ? (
+                <Check className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <Copy className="w-4 h-4 text-zinc-500" />
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">

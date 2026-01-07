@@ -10,9 +10,12 @@ interface ChatViewProps {
   contacts: Contact[];
   messages: Message[];
   currentUserId: string;
+  currentMetalId?: string;
   selectedConversationId: string | null;
+  typingContactIds?: string[];
   onSelectConversation: (id: string) => void;
   onSendMessage: (content: string, expiresIn?: number) => void;
+  onTyping?: (isTyping: boolean) => void;
   onNewConversation: () => void;
   onOpenSettings: () => void;
   onLock: () => void;
@@ -23,9 +26,12 @@ export function ChatView({
   contacts,
   messages,
   currentUserId,
+  currentMetalId,
   selectedConversationId,
+  typingContactIds = [],
   onSelectConversation,
   onSendMessage,
+  onTyping,
   onNewConversation,
   onOpenSettings,
   onLock
@@ -34,6 +40,8 @@ export function ChatView({
   const currentContact = selectedConversation
     ? contacts.find(c => selectedConversation.participantIds.includes(c.id) && c.id !== currentUserId)
     : null;
+  
+  const isContactTyping = currentContact ? typingContactIds.includes(currentContact.metalId) : false;
 
   return (
     <div className="flex h-screen bg-zinc-950">
@@ -41,6 +49,7 @@ export function ChatView({
         conversations={conversations}
         contacts={contacts}
         currentUserId={currentUserId}
+        currentMetalId={currentMetalId}
         selectedConversationId={selectedConversationId}
         onSelectConversation={onSelectConversation}
         onNewConversation={onNewConversation}
@@ -52,6 +61,7 @@ export function ChatView({
         <ChatHeader
           contact={currentContact || null}
           isEncrypted={true}
+          isTyping={isContactTyping}
         />
 
         {selectedConversationId ? (
@@ -62,6 +72,7 @@ export function ChatView({
             />
             <MessageInput
               onSend={onSendMessage}
+              onTyping={onTyping}
               disabled={!selectedConversationId}
             />
           </>

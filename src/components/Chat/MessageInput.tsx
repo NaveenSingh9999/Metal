@@ -1,21 +1,55 @@
 // Metal Message Input Component
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Send, Timer, Paperclip, Smile } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (content: string, expiresIn?: number) => void;
+  onTyping?: (isTyping: boolean) => void;
   disabled?: boolean;
 }
 
-export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
+export function MessageInput({ onSend, onTyping, disabled = false }: MessageInputProps) {
   const [content, setContent] = useState('');
   const [showExpiry, setShowExpiry] = useState(false);
   const [expiryMinutes, setExpiryMinutes] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced typing notification
+  const notifyTyping = useCallback(() => {
+    if (onTyping) {
+      onTyping(true);
+      
+      // Clear existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set timeout to stop typing indicator
+      typingTimeoutRef.current = setTimeout(() => {
+        onTyping(false);
+      }, 3000);
+    }
+  }, [onTyping]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSend = () => {
     if (!content.trim() || disabled) return;
+    
+    // Stop typing indicator
+    if (onTyping) onTyping(false);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
     
     onSend(content.trim(), expiryMinutes ? expiryMinutes * 60 : undefined);
     setContent('');
@@ -35,6 +69,11 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value);
+    
+    // Notify typing
+    if (e.target.value.length > 0) {
+      notifyTyping();
+    }
     
     // Auto-resize
     const textarea = e.target;
