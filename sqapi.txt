@@ -1,0 +1,185 @@
+api = "cb_95781ff2f25242b504bbb7259fa254617b77702be2c555a37fd5c534bed8a10e"
+
+Authentication
+
+All API requests require authentication using your API key. Include your key in the request header for secure access.
+Header Format
+X-SquidCloud-Key: cb_your_api_key_here
+Example Request
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files \
+  -H "X-SquidCloud-Key: cb_your_api_key"
+Keep your API key secure
+
+Never expose your API key in client-side code or public repositories. Store it securely in environment variables.
+API Endpoints Reference
+Base URL
+https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api
+GET
+/files
+read
+
+List all files and folders for the authenticated user
+Request Example
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files \
+  -H "X-SquidCloud-Key: YOUR_API_KEY"
+Response Example
+{
+  "files": [...],
+  "folders": [...],
+  "total_files": 50,
+  "total_folders": 2,
+  "success": true
+}
+Copy cURL
+Try in Playground
+GET
+/files/:id/metadata
+read
+
+Get detailed metadata for a specific file including chunks and encryption info
+Request Example
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files/FILE_ID/metadata \
+  -H "X-SquidCloud-Key: YOUR_API_KEY"
+Response Example
+{
+  "file": {
+    "id": "...",
+    "name": "example.pdf",
+    "size": 1024,
+    "type": "application/pdf",
+    "encryption_key": "...",
+    "chunks": [...]
+  },
+  "success": true
+}
+Copy cURL
+Try in Playground
+GET
+/files/:id/download
+read
+
+Download file content with automatic decryption
+Request Example
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files/FILE_ID/download \
+  -H "X-SquidCloud-Key: YOUR_API_KEY" \
+  -o downloaded-file.pdf
+Copy cURL
+Try in Playground
+POST
+/files/upload
+write
+
+Upload a new file with optional folder assignment and automatic encryption
+Request Example
+curl -X POST https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files/upload \
+  -H "X-SquidCloud-Key: YOUR_API_KEY" \
+  -F "file=@document.pdf" \
+  -F "name=My Document" \
+  -F "folderId=FOLDER_ID"
+Response Example
+{
+  "file": {
+    "id": "...",
+    "name": "My Document",
+    "size": 1024,
+    "created_at": "..."
+  },
+  "success": true
+}
+Copy cURL
+Try in Playground
+DELETE
+/files/:id
+delete
+
+Soft delete a file (can be restored later)
+Request Example
+curl -X DELETE https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files/FILE_ID \
+  -H "X-SquidCloud-Key: YOUR_API_KEY"
+Response Example
+{
+  "message": "File deleted successfully",
+  "success": true
+}
+Copy cURL
+Try in Playground
+GET
+/keys
+read
+
+List all API keys for the authenticated user
+Request Example
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/keys \
+  -H "X-SquidCloud-Key: YOUR_API_KEY"
+Copy cURL
+Try in Playground
+GET
+/storage
+read
+
+Get storage usage statistics and quota information
+Request Example
+curl -X GET https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/storage \
+  -H "X-SquidCloud-Key: YOUR_API_KEY"
+Copy cURL
+Try in Playground
+Response Format
+
+All API responses follow a consistent JSON structure with success indicators and appropriate HTTP status codes.
+Success Response (200-299)
+{
+  "success": true,
+  "data": {
+    // Response data here
+  },
+  "message": "Operation completed successfully"
+}
+Error Response (400-599)
+{
+  "success": false,
+  "error": "Detailed error message",
+  "code": "ERROR_CODE"
+}
+HTTP Status Codes
+200 OK
+Request succeeded
+401 Unauthorized
+Invalid or missing API key
+404 Not Found
+Resource not found
+429 Too Many Requests
+Rate limit exceeded
+500 Server Error
+Internal server error
+SDK Examples
+JS
+Python
+cURL
+// List all files
+const response = await fetch(
+  'https://aouqcwbdoyrccjcrhzzi.supabase.co/functions/v1/cloudbliss-api/files',
+  {
+    headers: {
+      'X-SquidCloud-Key': 'YOUR_API_KEY'
+    }
+  }
+);
+
+const data = await response.json();
+console.log(data.files);
+Rate Limits
+
+Default Limits:
+
+    1000 requests per minute
+    100MB max file size
+    10GB bandwidth per day
+    Unlimited storage
+
+Rate limits are enforced per API key. Contact support for custom limits or enterprise plans.
+Support
+
+Need help with the API? We're here to assist you.
+View Examples
+Report Issue
+API Changelog
