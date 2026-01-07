@@ -30,6 +30,7 @@ function App() {
     sendMessage,
     setTyping,
     addContactByMetalId,
+    addContactByMetalLink,
     findNearbyUsers,
     startConversation,
     openSettings,
@@ -142,11 +143,14 @@ function App() {
         onClose={closeNewConversation}
         contacts={contacts}
         currentMetalId={currentUser?.metalId}
+        currentPublicKey={currentUser?.publicKey}
+        currentDisplayName={currentUser?.displayName}
         onStartConversation={(contactId) => {
           startConversation(contactId);
           closeNewConversation();
         }}
         onAddContactByMetalId={addContactByMetalId}
+        onAddContactByMetalLink={addContactByMetalLink}
         onFindNearbyUsers={findNearbyUsers}
       />
     </>

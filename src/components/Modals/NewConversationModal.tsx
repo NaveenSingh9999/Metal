@@ -1,16 +1,20 @@
-// Metal New Conversation Modal - with Metal ID support
+// Metal New Conversation Modal - with Metal Link support
 import { useState } from 'react';
-import { X, UserPlus, Search, MapPin, Loader2, Hash, Copy, Check } from 'lucide-react';
+import { X, UserPlus, Search, MapPin, Loader2, Hash, Copy, Check, Link2, QrCode } from 'lucide-react';
 import type { Contact } from '../../types';
 import { formatMetalId, isValidMetalId, parseMetalId } from '../../services/metal-id';
+import { createMetalLink, parseMetalLink, isValidMetalLink } from '../../services/metal-link';
 
 interface NewConversationModalProps {
   isOpen: boolean;
   onClose: () => void;
   contacts: Contact[];
   currentMetalId?: string;
+  currentPublicKey?: string;
+  currentDisplayName?: string;
   onStartConversation: (contactId: string) => void;
   onAddContactByMetalId: (metalId: string) => Promise<Contact>;
+  onAddContactByMetalLink: (metalLink: string) => Promise<Contact>;
   onFindNearbyUsers: () => Promise<Contact[]>;
 }
 
@@ -19,18 +23,28 @@ export function NewConversationModal({
   onClose,
   contacts,
   currentMetalId,
+  currentPublicKey,
+  currentDisplayName,
   onStartConversation,
   onAddContactByMetalId,
+  onAddContactByMetalLink,
   onFindNearbyUsers
 }: NewConversationModalProps) {
-  const [mode, setMode] = useState<'select' | 'add' | 'nearby'>('select');
+  const [mode, setMode] = useState<'select' | 'add' | 'nearby' | 'share'>('select');
   const [searchQuery, setSearchQuery] = useState('');
   const [metalIdInput, setMetalIdInput] = useState('');
+  const [metalLinkInput, setMetalLinkInput] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [foundUser, setFoundUser] = useState<Contact | null>(null);
   const [nearbyUsers, setNearbyUsers] = useState<Contact[]>([]);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Generate Metal Link for sharing
+  const myMetalLink = currentMetalId && currentPublicKey && currentDisplayName
+    ? createMetalLink(currentMetalId, currentPublicKey, currentDisplayName)
+    : null;
 
   if (!isOpen) return null;
 
@@ -40,10 +54,15 @@ export function NewConversationModal({
   );
 
   const handleSearchByMetalId = async () => {
+    // First check if it's a Metal Link
+    if (isValidMetalLink(metalIdInput)) {
+      return handleAddByMetalLink();
+    }
+
     const normalized = parseMetalId(metalIdInput);
     
     if (!isValidMetalId(normalized)) {
-      setError('Invalid Metal ID format. Expected 5 characters (e.g., ABC12)');
+      setError('Invalid Metal ID format. Expected 5 characters (e.g., ABC12) or a Metal Link');
       return;
     }
 
@@ -55,7 +74,29 @@ export function NewConversationModal({
       const contact = await onAddContactByMetalId(normalized);
       setFoundUser(contact);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'User not found');
+      setError(err instanceof Error ? err.message : 'User not found. Ask them for their Metal Link instead!');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleAddByMetalLink = async () => {
+    const linkToUse = metalLinkInput || metalIdInput;
+    
+    if (!isValidMetalLink(linkToUse)) {
+      setError('Invalid Metal Link format');
+      return;
+    }
+
+    setIsSearching(true);
+    setError('');
+    setFoundUser(null);
+
+    try {
+      const contact = await onAddContactByMetalLink(linkToUse);
+      setFoundUser(contact);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add contact');
     } finally {
       setIsSearching(false);
     }
@@ -79,6 +120,13 @@ export function NewConversationModal({
     }
   };
 
+  const handleCopyMetalLink = async () => {
+    if (myMetalLink) {
+      await navigator.clipboard.writeText(myMetalLink);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }
+  };
   const handleCopyMetalId = async () => {
     if (currentMetalId) {
       await navigator.clipboard.writeText(currentMetalId);
@@ -98,6 +146,7 @@ export function NewConversationModal({
     setMode('select');
     setSearchQuery('');
     setMetalIdInput('');
+    setMetalLinkInput('');
     setFoundUser(null);
     setNearbyUsers([]);
     setError('');
@@ -105,13 +154,14 @@ export function NewConversationModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md">
+      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-800">
           <h2 className="text-lg font-semibold text-white">
             {mode === 'select' && 'New Conversation'}
-            {mode === 'add' && 'Add by Metal ID'}
+            {mode === 'add' && 'Add Contact'}
             {mode === 'nearby' && 'Find Nearby'}
+            {mode === 'share' && 'Share Your Metal Link'}
           </h2>
           <button
             onClick={() => {
@@ -124,34 +174,92 @@ export function NewConversationModal({
           </button>
         </div>
 
-        {/* Your Metal ID */}
+        {/* Your Metal ID - Quick Share Button */}
         {currentMetalId && mode === 'select' && (
           <div className="px-4 pt-4">
-            <div className="bg-zinc-800/50 rounded-lg p-3 flex items-center justify-between">
-              <div>
-                <div className="text-xs text-zinc-500 mb-1">Your Metal ID</div>
-                <div className="font-mono text-lg font-bold text-emerald-400">
-                  {formatMetalId(currentMetalId)}
+            <button
+              onClick={() => setMode('share')}
+              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-lg p-3 flex items-center justify-between transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                  <QrCode className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <div className="text-white font-semibold">Share Your Metal Link</div>
+                  <div className="text-emerald-200 text-sm font-mono">{formatMetalId(currentMetalId)}</div>
                 </div>
               </div>
-              <button
-                onClick={handleCopyMetalId}
-                className="p-2 hover:bg-zinc-700 rounded-lg transition-colors"
-                title="Copy Metal ID"
-              >
-                {copied ? (
-                  <Check className="w-5 h-5 text-emerald-400" />
-                ) : (
-                  <Copy className="w-5 h-5 text-zinc-400" />
-                )}
-              </button>
-            </div>
+              <Link2 className="w-5 h-5 text-white" />
+            </button>
           </div>
         )}
 
         {/* Content */}
-        <div className="p-4">
-          {mode === 'select' ? (
+        <div className="p-4 overflow-y-auto flex-1">
+          {mode === 'share' ? (
+            <>
+              {/* Share Metal Link */}
+              <div className="text-center mb-6">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl font-bold text-white">
+                    {currentDisplayName?.charAt(0).toUpperCase() || 'M'}
+                  </span>
+                </div>
+                <div className="text-xl font-bold text-white mb-1">{currentDisplayName}</div>
+                <div className="font-mono text-emerald-400 text-lg">{formatMetalId(currentMetalId || '')}</div>
+              </div>
+
+              <div className="space-y-3">
+                {/* Metal Link */}
+                <div className="bg-zinc-800 rounded-lg p-4">
+                  <div className="text-xs text-zinc-500 mb-2">Your Metal Link (share this to add you as contact)</div>
+                  <div className="bg-zinc-900 rounded p-2 mb-3 overflow-x-auto">
+                    <code className="text-xs text-emerald-400 break-all">{myMetalLink}</code>
+                  </div>
+                  <button
+                    onClick={handleCopyMetalLink}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    {copiedLink ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Copied!
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        Copy Metal Link
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Quick Copy Metal ID */}
+                <button
+                  onClick={handleCopyMetalId}
+                  className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      Metal ID Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Hash className="w-4 h-4" />
+                      Copy Metal ID Only: {formatMetalId(currentMetalId || '')}
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-500 text-center mt-4">
+                Share your Metal Link with friends so they can message you directly. 
+                No server lookup required!
+              </p>
+            </>
+          ) : mode === 'select' ? (
             <>
               {/* Search */}
               <div className="relative mb-4">
@@ -235,22 +343,21 @@ export function NewConversationModal({
             </>
           ) : mode === 'add' ? (
             <>
-              {/* Add by Metal ID Form */}
+              {/* Add by Metal ID or Link Form */}
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-2">
-                    Enter Metal ID
+                    Enter Metal ID or paste Metal Link
                   </label>
                   <input
                     type="text"
                     value={metalIdInput}
-                    onChange={(e) => setMetalIdInput(e.target.value.toUpperCase())}
-                    placeholder="ABC12"
-                    maxLength={6}
-                    className="w-full bg-zinc-800 text-white px-4 py-3 rounded-lg border border-zinc-700 focus:border-emerald-500 focus:outline-none font-mono text-xl text-center tracking-widest uppercase"
+                    onChange={(e) => setMetalIdInput(e.target.value)}
+                    placeholder="ABC12 or metal://..."
+                    className="w-full bg-zinc-800 text-white px-4 py-3 rounded-lg border border-zinc-700 focus:border-emerald-500 focus:outline-none font-mono text-center tracking-wide"
                   />
                   <p className="mt-2 text-xs text-zinc-500 text-center">
-                    Ask your contact for their 5-character Metal ID
+                    Paste a Metal Link for instant add, or enter a 5-character Metal ID
                   </p>
                 </div>
 

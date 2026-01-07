@@ -5,9 +5,11 @@ import type { Message, Conversation, Contact, AppSettings } from '../types';
 import { identityService } from '../auth/identity';
 import type { UserIdentity } from '../auth/identity';
 import { encryptedStorage } from '../storage/encrypted-db';
-import { generateId } from '../crypto/utils';
-import { metalIdService, formatMetalId } from '../services/metal-id';
+import { generateId, base64ToBytes } from '../crypto/utils';
+import { metalIdService } from '../services/metal-id';
 import type { UserPresence } from '../services/metal-id';
+import { parseMetalLink, createMetalLink, formatMetalIdDisplay } from '../services/metal-link';
+import { messagingService } from '../services/messaging';
 
 interface AppState {
   // Auth state
@@ -16,6 +18,7 @@ interface AppState {
   isCheckingIdentity: boolean;
   currentUser: UserIdentity | null;
   authError: string | null;
+  myMetalLink: string | null;  // Shareable link
 
   // Chat state
   conversations: Conversation[];
@@ -41,7 +44,10 @@ interface AppState {
   selectConversation: (id: string | null) => void;
   sendMessage: (content: string, expiresIn?: number) => Promise<void>;
   setTyping: (isTyping: boolean) => void;
+  receiveMessage: (message: Message) => void;
+  handleTypingIndicator: (metalId: string, isTyping: boolean) => void;
   
+  addContactByMetalLink: (metalLink: string) => Promise<Contact>;
   addContactByMetalId: (metalId: string) => Promise<Contact>;
   findUserByMetalId: (metalId: string) => Promise<Contact | null>;
   findNearbyUsers: () => Promise<Contact[]>;
@@ -68,6 +74,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   currentUser: null,
   authError: null,
   isCheckingIdentity: true,
+  myMetalLink: null,
   
   conversations: [],
   contacts: [],
@@ -97,11 +104,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       set({ authError: null });
       const user = await identityService.unlock(password);
-      set({ isAuthenticated: true, currentUser: user });
+      
+      // Generate shareable Metal Link
+      const metalLink = createMetalLink(user.metalId, user.publicKey, user.displayName);
+      
+      set({ isAuthenticated: true, currentUser: user, myMetalLink: metalLink });
       await get().loadData();
       
       // Start presence updates
       metalIdService.startPresence(user.metalId, get().updatePresence);
+      
+      // Initialize messaging service
+      const keyPair = identityService.getKeyPair();
+      messagingService.initialize(
+        user.metalId,
+        keyPair.privateKey,
+        get().receiveMessage,
+        get().handleTypingIndicator
+      );
+      
+      // Add all contact public keys to messaging service
+      const { contacts } = get();
+      for (const contact of contacts) {
+        messagingService.addContactKey(contact.metalId, contact.publicKey);
+      }
     } catch (error) {
       set({ authError: error instanceof Error ? error.message : 'Login failed' });
       throw error;
@@ -113,14 +139,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       set({ authError: null });
       const user = await identityService.createIdentity(displayName, password, apiKey);
+      
+      // Generate shareable Metal Link
+      const metalLink = createMetalLink(user.metalId, user.publicKey, displayName);
+      
       set({ 
         isAuthenticated: true, 
         currentUser: user,
-        hasExistingIdentity: true 
+        hasExistingIdentity: true,
+        myMetalLink: metalLink
       });
       
       // Start presence updates
       metalIdService.startPresence(user.metalId, get().updatePresence);
+      
+      // Initialize messaging service
+      const keyPair = identityService.getKeyPair();
+      messagingService.initialize(
+        user.metalId,
+        keyPair.privateKey,
+        get().receiveMessage,
+        get().handleTypingIndicator
+      );
     } catch (error) {
       set({ authError: error instanceof Error ? error.message : 'Failed to create identity' });
       throw error;
@@ -130,10 +170,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // Logout
   logout: async () => {
     metalIdService.stopPresence();
+    messagingService.destroy();
     await identityService.lock();
     set({
       isAuthenticated: false,
       currentUser: null,
+      myMetalLink: null,
       conversations: [],
       contacts: [],
       messages: {},
@@ -150,13 +192,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Send message
   sendMessage: async (content: string, expiresIn?: number) => {
-    const { selectedConversationId, currentUser, messages, conversations } = get();
+    const { selectedConversationId, currentUser, messages, conversations, contacts } = get();
     if (!selectedConversationId || !currentUser) return;
+
+    // Find the contact for this conversation
+    const conversation = conversations.find(c => c.id === selectedConversationId);
+    if (!conversation) return;
+    
+    const contactId = conversation.participantIds.find(id => id !== currentUser.id);
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
 
     const message: Message = {
       id: generateId(),
       conversationId: selectedConversationId,
       senderId: currentUser.id,
+      senderMetalId: currentUser.metalId,
       content,
       timestamp: Date.now(),
       type: 'text',
@@ -165,7 +216,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       expiresAt: expiresIn ? Date.now() + expiresIn * 1000 : undefined
     };
 
-    // Add to state
+    // Add to state optimistically
     const conversationMessages = messages[selectedConversationId] || [];
     set({
       messages: {
@@ -187,13 +238,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
     set({ conversations: updatedConversations });
 
-    // Save to storage
+    // Send via messaging service
     try {
-      await encryptedStorage.saveMessage(
-        message.id,
-        message.conversationId,
-        message,
-        message.timestamp
+      await messagingService.sendMessage(
+        contact.metalId,
+        contact.publicKey,
+        content,
+        selectedConversationId
       );
 
       // Update status to sent
@@ -206,6 +257,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
           )
         }
       });
+
+      // Save to local storage
+      await encryptedStorage.saveMessage(
+        message.id,
+        message.conversationId,
+        { ...message, status: 'sent' },
+        message.timestamp
+      );
     } catch (error) {
       // Update status to failed
       const currentMessages = get().messages[selectedConversationId] || [];
@@ -217,22 +276,152 @@ export const useAppStore = create<AppState>()((set, get) => ({
           )
         }
       });
+      console.error('Failed to send message:', error);
     }
+  },
+
+  // Receive message from messaging service
+  receiveMessage: (message: Message) => {
+    const { messages, conversations, contacts } = get();
+    
+    // Find or create conversation
+    let conversation = conversations.find(c => c.id === message.conversationId);
+    
+    if (!conversation) {
+      // Find the contact by Metal ID
+      const contact = contacts.find(c => c.metalId === message.senderMetalId);
+      if (contact) {
+        // Create a new conversation
+        conversation = {
+          id: message.conversationId,
+          participantIds: [contact.id, message.senderId],
+          unreadCount: 1,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          isGroup: false,
+          lastMessage: message
+        };
+        set({ conversations: [...conversations, conversation] });
+      }
+    } else {
+      // Update existing conversation
+      const updatedConversations = conversations.map((conv: Conversation) => {
+        if (conv.id === message.conversationId) {
+          return {
+            ...conv,
+            lastMessage: message,
+            updatedAt: Date.now(),
+            unreadCount: conv.unreadCount + 1
+          };
+        }
+        return conv;
+      });
+      set({ conversations: updatedConversations });
+    }
+
+    // Add message to state
+    const conversationMessages = messages[message.conversationId] || [];
+    set({
+      messages: {
+        ...messages,
+        [message.conversationId]: [...conversationMessages, message]
+      }
+    });
+
+    // Save to local storage
+    encryptedStorage.saveMessage(
+      message.id,
+      message.conversationId,
+      message,
+      message.timestamp
+    ).catch(console.error);
+
+    // Play notification sound if enabled
+    // TODO: Add sound notification
+  },
+
+  // Handle typing indicator from messaging service
+  handleTypingIndicator: (metalId: string, isTyping: boolean) => {
+    const { contacts, conversations, typingUsers } = get();
+    
+    // Find the contact and their conversation
+    const contact = contacts.find(c => c.metalId === metalId);
+    if (!contact) return;
+    
+    const conversation = conversations.find(c => 
+      c.participantIds.includes(contact.id) && !c.isGroup
+    );
+    if (!conversation) return;
+
+    const currentTyping = typingUsers.get(conversation.id) || [];
+    
+    if (isTyping && !currentTyping.includes(metalId)) {
+      typingUsers.set(conversation.id, [...currentTyping, metalId]);
+    } else if (!isTyping) {
+      typingUsers.set(conversation.id, currentTyping.filter(id => id !== metalId));
+    }
+    
+    set({ typingUsers: new Map(typingUsers) });
   },
 
   // Set typing status
   setTyping: (isTyping: boolean) => {
-    const { selectedConversationId } = get();
-    if (selectedConversationId) {
-      metalIdService.setTyping(selectedConversationId, isTyping);
-    }
+    const { selectedConversationId, conversations, contacts, currentUser } = get();
+    if (!selectedConversationId || !currentUser) return;
+    
+    // Find the contact in this conversation
+    const conversation = conversations.find(c => c.id === selectedConversationId);
+    if (!conversation) return;
+    
+    const contactId = conversation.participantIds.find(id => id !== currentUser.id);
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
+    // Send typing indicator via messaging service
+    messagingService.sendTypingIndicator(contact.metalId, isTyping).catch(() => {});
   },
 
-  // Add contact by Metal ID
+  // Add contact by Metal Link (contains all info, no server needed!)
+  addContactByMetalLink: async (metalLink: string) => {
+    const parsed = parseMetalLink(metalLink);
+    if (!parsed) {
+      throw new Error('Invalid Metal Link format');
+    }
+
+    const { contacts, currentUser } = get();
+    
+    // Don't add yourself
+    if (currentUser && parsed.metalId === currentUser.metalId) {
+      throw new Error('Cannot add yourself as a contact');
+    }
+
+    // Check if contact already exists
+    const existing = contacts.find(c => c.metalId === parsed.metalId);
+    if (existing) {
+      return existing;
+    }
+
+    const contact: Contact = {
+      id: generateId(),
+      metalId: parsed.metalId,
+      displayName: parsed.displayName,
+      publicKey: parsed.publicKey,
+      addedAt: Date.now()
+    };
+
+    // Add to messaging service
+    messagingService.addContactKey(contact.metalId, contact.publicKey);
+
+    await encryptedStorage.saveContact(contact.id, contact);
+    set({ contacts: [...get().contacts, contact] });
+    return contact;
+  },
+
+  // Add contact by Metal ID (requires server lookup)
   addContactByMetalId: async (metalId: string) => {
     const user = await metalIdService.findUserByMetalId(metalId);
     if (!user) {
-      throw new Error(`User with Metal ID ${formatMetalId(metalId)} not found`);
+      throw new Error(`User with Metal ID ${formatMetalIdDisplay(metalId)} not found. Try using their full Metal Link instead.`);
     }
 
     // Check if contact already exists
