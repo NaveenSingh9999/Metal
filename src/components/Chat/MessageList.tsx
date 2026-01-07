@@ -1,7 +1,7 @@
 // Metal Message List Component
 import { useEffect, useRef } from 'react';
 import { Check, CheckCheck, Clock, AlertCircle, Lock } from 'lucide-react';
-import { Message } from '../../types';
+import type { Message } from '../../types';
 
 interface MessageListProps {
   messages: Message[];

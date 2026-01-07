@@ -1,6 +1,7 @@
 // Metal Message Input Component
-import { useState, useRef, KeyboardEvent } from 'react';
-import { Send, Paperclip, Smile, Timer } from 'lucide-react';
+import { useState, useRef } from 'react';
+import type { KeyboardEvent } from 'react';
+import { Send, Timer, Paperclip, Smile } from 'lucide-react';
 
 interface MessageInputProps {
   onSend: (content: string, expiresIn?: number) => void;

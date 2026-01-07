@@ -21,10 +21,20 @@ export async function deriveFromPassword(
 ): Promise<DerivedKeys> {
   const actualSalt = salt || randomBytes(CRYPTO_CONSTANTS.SALT_SIZE);
   
+  // Convert password to ArrayBuffer
+  const passwordBytes = encodeString(password);
+  
+  // Create proper ArrayBuffer copies to avoid SharedArrayBuffer issues
+  const passwordBuffer = new ArrayBuffer(passwordBytes.length);
+  new Uint8Array(passwordBuffer).set(passwordBytes);
+  
+  const saltBuffer = new ArrayBuffer(actualSalt.length);
+  new Uint8Array(saltBuffer).set(actualSalt);
+  
   // Import password as key material
   const passwordKey = await crypto.subtle.importKey(
     'raw',
-    encodeString(password),
+    passwordBuffer,
     'PBKDF2',
     false,
     ['deriveBits']
@@ -34,7 +44,7 @@ export async function deriveFromPassword(
   const masterKeyBits = await crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: actualSalt,
+      salt: saltBuffer,
       iterations: CRYPTO_CONSTANTS.KDF_ITERATIONS,
       hash: 'SHA-256'
     },

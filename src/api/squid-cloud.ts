@@ -182,7 +182,10 @@ class SquidCloudClient {
     name: string,
     contentType: string = 'application/octet-stream'
   ): Promise<UploadResponse> {
-    const blob = new Blob([data], { type: contentType });
+    // Create proper ArrayBuffer to avoid SharedArrayBuffer issues
+    const buffer = new ArrayBuffer(data.length);
+    new Uint8Array(buffer).set(data);
+    const blob = new Blob([buffer], { type: contentType });
     return this.uploadFile(blob, name);
   }
 

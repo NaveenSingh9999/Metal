@@ -3,7 +3,7 @@ import { Sidebar } from './Sidebar';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
-import { Message, Conversation, Contact } from '../../types';
+import type { Message, Conversation, Contact } from '../../types';
 
 interface ChatViewProps {
   conversations: Conversation[];

@@ -1,6 +1,6 @@
 // Metal Chat Header Component
-import { Shield, Phone, Video, MoreVertical, Lock } from 'lucide-react';
-import { Contact } from '../../types';
+import { Shield, Phone, Lock, Video, MoreVertical } from 'lucide-react';
+import type { Contact } from '../../types';
 
 interface ChatHeaderProps {
   contact: Contact | null;

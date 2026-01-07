@@ -1,7 +1,7 @@
 // Metal New Conversation Modal
 import { useState } from 'react';
 import { X, UserPlus, Search } from 'lucide-react';
-import { Contact } from '../../types';
+import type { Contact } from '../../types';
 
 interface NewConversationModalProps {
   isOpen: boolean;

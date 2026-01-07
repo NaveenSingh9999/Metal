@@ -1,6 +1,8 @@
 // Metal Identity & Authentication Service
-import { generateKeyPair, serializeKeyPair, deserializeKeyPair, KeyPair, SerializedKeyPair } from '../crypto/x25519';
-import { deriveFromPassword, DerivedKeys } from '../crypto/kdf';
+import { generateKeyPair, serializeKeyPair, deserializeKeyPair } from '../crypto/x25519';
+import type { KeyPair, SerializedKeyPair } from '../crypto/x25519';
+import { deriveFromPassword } from '../crypto/kdf';
+import type { DerivedKeys } from '../crypto/kdf';
 import { bytesToBase64, base64ToBytes, generateId } from '../crypto/utils';
 import { encryptedStorage } from '../storage/encrypted-db';
 import { squidCloud } from '../api/squid-cloud';

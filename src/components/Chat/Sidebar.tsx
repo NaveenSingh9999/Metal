@@ -9,7 +9,7 @@ import {
   Lock,
   Shield
 } from 'lucide-react';
-import { Conversation, Contact } from '../../types';
+import type { Conversation, Contact } from '../../types';
 
 interface SidebarProps {
   conversations: Conversation[];

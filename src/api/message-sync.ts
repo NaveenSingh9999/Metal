@@ -1,9 +1,9 @@
 // Metal Message Sync Service
 // Handles encrypted message synchronization via Squid Cloud
 
-import { squidCloud, SquidFile } from './squid-cloud';
+import { squidCloud, type SquidFile } from './squid-cloud';
 import { encrypt, decrypt, importAESKey, exportAESKey, generateAESKey } from '../crypto/aes';
-import { bytesToBase64, base64ToBytes, encodeString, decodeString } from '../crypto/utils';
+import { encodeString, decodeString } from '../crypto/utils';
 
 export interface SyncedMessage {
   id: string;
@@ -74,8 +74,7 @@ class MessageSyncService {
    */
   async sendToInbox(
     recipientId: string,
-    message: SyncedMessage,
-    recipientPublicKey: Uint8Array
+    message: SyncedMessage
   ): Promise<string> {
     // In production, encrypt with recipient's public key
     // For now, use sync key (simplified)

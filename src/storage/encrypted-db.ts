@@ -1,5 +1,6 @@
 // Metal Encrypted IndexedDB Storage
-import { openDB, DBSchema, IDBPDatabase } from 'idb';
+import { openDB } from 'idb';
+import type { DBSchema, IDBPDatabase } from 'idb';
 import { encrypt, decrypt, importAESKey } from '../crypto/aes';
 import { encodeString, decodeString } from '../crypto/utils';
 
@@ -64,7 +65,7 @@ class EncryptedStorage {
     this.storageKey = await importAESKey(keyBytes);
     
     this.db = await openDB<MetalDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      upgrade(db: IDBPDatabase<MetalDBSchema>) {
         // Identity store
         if (!db.objectStoreNames.contains('identity')) {
           db.createObjectStore('identity', { keyPath: 'id' });
@@ -198,7 +199,7 @@ class EncryptedStorage {
     if (!this.db) throw new Error('Storage not initialized');
     const records = await this.db.getAllFromIndex('messages', 'by-conversation', conversationId);
     const messages: T[] = [];
-    for (const record of records.sort((a, b) => a.timestamp - b.timestamp)) {
+    for (const record of records.sort((a: { timestamp: number }, b: { timestamp: number }) => a.timestamp - b.timestamp)) {
       messages.push(await this.decryptData<T>(record.data));
     }
     return messages;

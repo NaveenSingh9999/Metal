@@ -14,7 +14,7 @@ import {
   Copy,
   Check
 } from 'lucide-react';
-import { AppSettings, DEFAULT_SETTINGS } from '../../types';
+import type { AppSettings } from '../../types';
 
 interface SettingsModalProps {
   isOpen: boolean;

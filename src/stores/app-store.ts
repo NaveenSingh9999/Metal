@@ -1,7 +1,9 @@
 // Metal App Store - Main application state
 import { create } from 'zustand';
-import { Message, Conversation, Contact, AppSettings, DEFAULT_SETTINGS } from '../types';
-import { identityService, UserIdentity } from '../auth/identity';
+import { DEFAULT_SETTINGS } from '../types';
+import type { Message, Conversation, Contact, AppSettings } from '../types';
+import { identityService } from '../auth/identity';
+import type { UserIdentity } from '../auth/identity';
 import { encryptedStorage } from '../storage/encrypted-db';
 import { generateId } from '../crypto/utils';
 
@@ -46,7 +48,7 @@ interface AppState {
   deleteAccount: () => Promise<void>;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>()((set, get) => ({
   // Initial state
   isAuthenticated: false,
   hasExistingIdentity: false,
@@ -142,7 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     // Update conversation
-    const updatedConversations = conversations.map(conv => {
+    const updatedConversations = conversations.map((conv: Conversation) => {
       if (conv.id === selectedConversationId) {
         return {
           ...conv,
@@ -168,7 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         messages: {
           ...get().messages,
-          [selectedConversationId]: currentMessages.map(m =>
+          [selectedConversationId]: currentMessages.map((m: Message) =>
             m.id === message.id ? { ...m, status: 'sent' as const } : m
           )
         }
@@ -179,7 +181,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         messages: {
           ...get().messages,
-          [selectedConversationId]: currentMessages.map(m =>
+          [selectedConversationId]: currentMessages.map((m: Message) =>
             m.id === message.id ? { ...m, status: 'failed' as const } : m
           )
         }
@@ -207,7 +209,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Check if conversation exists
     const existing = conversations.find(
-      conv => conv.participantIds.includes(contactId) && 
+      (conv: Conversation) => conv.participantIds.includes(contactId) && 
               conv.participantIds.includes(currentUser.id) &&
               !conv.isGroup
     );

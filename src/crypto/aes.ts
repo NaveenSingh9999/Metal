@@ -23,9 +23,13 @@ export async function generateAESKey(): Promise<CryptoKey> {
  * Import raw bytes as AES key
  */
 export async function importAESKey(keyBytes: Uint8Array): Promise<CryptoKey> {
+  // Create a proper ArrayBuffer copy to avoid SharedArrayBuffer issues
+  const buffer = new ArrayBuffer(keyBytes.length);
+  new Uint8Array(buffer).set(keyBytes);
+  
   return crypto.subtle.importKey(
     'raw',
-    keyBytes,
+    buffer,
     { name: 'AES-GCM', length: 256 },
     true,
     ['encrypt', 'decrypt']
@@ -50,15 +54,30 @@ export async function encrypt(
 ): Promise<Uint8Array> {
   const nonce = randomBytes(CRYPTO_CONSTANTS.NONCE_SIZE);
   
+  // Create proper ArrayBuffer copies
+  const nonceBuffer = new ArrayBuffer(nonce.length);
+  new Uint8Array(nonceBuffer).set(nonce);
+  
+  const encryptOptions: AesGcmParams = {
+    name: 'AES-GCM',
+    iv: nonceBuffer,
+    tagLength: 128
+  };
+  
+  if (additionalData) {
+    const adBuffer = new ArrayBuffer(additionalData.length);
+    new Uint8Array(adBuffer).set(additionalData);
+    encryptOptions.additionalData = adBuffer;
+  }
+  
+  // Create proper ArrayBuffer for plaintext
+  const plaintextBuffer = new ArrayBuffer(plaintext.length);
+  new Uint8Array(plaintextBuffer).set(plaintext);
+  
   const ciphertext = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv: nonce,
-      additionalData: additionalData,
-      tagLength: 128
-    },
+    encryptOptions,
     key,
-    plaintext
+    plaintextBuffer
   );
   
   // Format: nonce (12 bytes) + ciphertext + authTag
@@ -76,15 +95,30 @@ export async function decrypt(
   const nonce = encryptedData.slice(0, CRYPTO_CONSTANTS.NONCE_SIZE);
   const ciphertext = encryptedData.slice(CRYPTO_CONSTANTS.NONCE_SIZE);
   
+  // Create proper ArrayBuffer copies
+  const nonceBuffer = new ArrayBuffer(nonce.length);
+  new Uint8Array(nonceBuffer).set(nonce);
+  
+  const decryptOptions: AesGcmParams = {
+    name: 'AES-GCM',
+    iv: nonceBuffer,
+    tagLength: 128
+  };
+  
+  if (additionalData) {
+    const adBuffer = new ArrayBuffer(additionalData.length);
+    new Uint8Array(adBuffer).set(additionalData);
+    decryptOptions.additionalData = adBuffer;
+  }
+  
+  // Create proper ArrayBuffer for ciphertext
+  const ciphertextBuffer = new ArrayBuffer(ciphertext.length);
+  new Uint8Array(ciphertextBuffer).set(ciphertext);
+  
   const plaintext = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv: nonce,
-      additionalData: additionalData,
-      tagLength: 128
-    },
+    decryptOptions,
     key,
-    ciphertext
+    ciphertextBuffer
   );
   
   return new Uint8Array(plaintext);
