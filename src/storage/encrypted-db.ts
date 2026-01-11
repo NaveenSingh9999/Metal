@@ -384,12 +384,19 @@ class EncryptedStorage {
   }>> {
     if (!this.db) throw new Error('Storage not initialized');
     const records = await this.db.getAllFromIndex('syncQueue', 'by-timestamp');
-    const items = [];
+    const items: Array<{
+      id: string;
+      type: 'message' | 'contact' | 'conversation';
+      action: 'create' | 'update' | 'delete';
+      data: Awaited<T>;
+      timestamp: number;
+      retries: number;
+    }> = [];
     for (const record of records) {
       items.push({
         id: record.id,
-        type: record.type,
-        action: record.action,
+        type: record.type as 'message' | 'contact' | 'conversation',
+        action: record.action as 'create' | 'update' | 'delete',
         data: await this.decryptData<T>(record.data),
         timestamp: record.timestamp,
         retries: record.retries

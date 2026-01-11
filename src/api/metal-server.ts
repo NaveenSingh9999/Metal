@@ -348,6 +348,13 @@ class MetalServerClient {
   }
 
   /**
+   * Check if WebSocket is connected
+   */
+  isWebSocketConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
    * Disconnect WebSocket
    */
   disconnectWebSocket(): void {

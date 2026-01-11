@@ -481,7 +481,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // Add to messaging service
     messagingService.addContactKey(contact.metalId, contact.publicKey);
 
-    await encryptedStorage.saveContact(contact.id, contact);
+    await encryptedStorage.saveContact(contact.id, contact.metalId, contact);
     set({ contacts: [...get().contacts, contact] });
     return contact;
   },
@@ -508,7 +508,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         lastSeen: serverUser.lastSeen,
         isOnline: serverUser.isOnline
       };
-      await encryptedStorage.saveContact(existing.id, updatedContact);
+      await encryptedStorage.saveContact(existing.id, existing.metalId, updatedContact);
       const updatedContacts = contacts.map(c => c.id === existing.id ? updatedContact : c);
       set({ contacts: updatedContacts });
       return updatedContact;
@@ -525,7 +525,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     };
 
     // Save to local cache and add contact's key for messaging
-    await encryptedStorage.saveContact(contact.id, contact);
+    await encryptedStorage.saveContact(contact.id, contact.metalId, contact);
     messagingService.addContactKey(contact.metalId, contact.publicKey);
     set({ contacts: [...get().contacts, contact] });
     return contact;
@@ -609,7 +609,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       addedAt: Date.now()
     };
 
-    await encryptedStorage.saveContact(contact.id, contact);
+    await encryptedStorage.saveContact(contact.id, contact.metalId, contact);
     set({ contacts: [...get().contacts, contact] });
   },
 
