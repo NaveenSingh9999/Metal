@@ -309,11 +309,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
           selectedConversationId
         );
         
-        await metalServer.sendRealTimeMessage(
-          contact.metalId,
+        await metalServer.sendRealTimeMessage({
+          id: message.id,
+          fromMetalId: get().currentUser?.metalId || '',
+          toMetalId: contact.metalId,
           encryptedContent,
-          'encrypted'
-        );
+          timestamp: Date.now(),
+          type: 'message'
+        });
       }
 
       // Update status to sent

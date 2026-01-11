@@ -374,11 +374,11 @@ class EncryptedStorage {
     });
   }
 
-  async getSyncQueue<T>(): Promise<Array<{
+  async getSyncQueue(): Promise<Array<{
     id: string;
     type: 'message' | 'contact' | 'conversation';
     action: 'create' | 'update' | 'delete';
-    data: T;
+    data: unknown;
     timestamp: number;
     retries: number;
   }>> {
@@ -388,7 +388,7 @@ class EncryptedStorage {
       id: string;
       type: 'message' | 'contact' | 'conversation';
       action: 'create' | 'update' | 'delete';
-      data: Awaited<T>;
+      data: unknown;
       timestamp: number;
       retries: number;
     }> = [];
@@ -397,7 +397,7 @@ class EncryptedStorage {
         id: record.id,
         type: record.type as 'message' | 'contact' | 'conversation',
         action: record.action as 'create' | 'update' | 'delete',
-        data: await this.decryptData<T>(record.data),
+        data: await this.decryptData(record.data),
         timestamp: record.timestamp,
         retries: record.retries
       });

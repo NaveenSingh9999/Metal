@@ -501,6 +501,13 @@ class MetalServerClient {
   isNetworkOnline(): boolean {
     return this.isOnline;
   }
+
+  /**
+   * Check if WebSocket is connected
+   */
+  isWebSocketConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
 }
 
 // Singleton instance
