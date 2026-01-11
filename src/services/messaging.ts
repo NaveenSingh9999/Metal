@@ -355,6 +355,58 @@ class MessagingService {
     this.onMessage = null;
     this.onTyping = null;
   }
+
+  /**
+   * Decrypt a message from the server
+   */
+  async decryptServerMessage(
+    encryptedContent: string,
+    senderPublicKey: string,
+    myPrivateKey: Uint8Array
+  ): Promise<string> {
+    // Derive shared secret
+    const senderPubKey = base64ToBytes(senderPublicKey);
+    const sharedSecret = computeSharedSecret(myPrivateKey, senderPubKey);
+
+    // Decrypt
+    const aesKey = await importAESKey(sharedSecret.slice(0, 32));
+    const decrypted = await decrypt(
+      base64ToBytes(encryptedContent),
+      aesKey
+    );
+
+    const messageData = JSON.parse(new TextDecoder().decode(decrypted));
+    return messageData.content;
+  }
+
+  /**
+   * Encrypt a message for the server
+   */
+  async encryptForServer(
+    content: string,
+    recipientPublicKey: string,
+    myPrivateKey: Uint8Array,
+    conversationId: string
+  ): Promise<string> {
+    // Derive shared secret
+    const recipientPubKey = base64ToBytes(recipientPublicKey);
+    const sharedSecret = computeSharedSecret(myPrivateKey, recipientPubKey);
+
+    // Encrypt message content
+    const messageData = JSON.stringify({
+      content,
+      conversationId,
+      timestamp: Date.now()
+    });
+
+    const aesKey = await importAESKey(sharedSecret.slice(0, 32));
+    const encrypted = await encrypt(
+      new TextEncoder().encode(messageData),
+      aesKey
+    );
+
+    return bytesToBase64(encrypted);
+  }
 }
 
 export const messagingService = new MessagingService();

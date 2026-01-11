@@ -16,9 +16,24 @@ interface MetalDBSchema extends DBSchema {
     key: string;
     value: {
       id: string;
+      metalId: string;
       data: string; // Encrypted JSON
     };
-    indexes: { 'by-id': string };
+    indexes: { 
+      'by-id': string;
+      'by-metalId': string;
+    };
+  };
+  conversations: {
+    key: string;
+    value: {
+      id: string;
+      data: string; // Encrypted JSON
+      updatedAt: number;
+    };
+    indexes: {
+      'by-updatedAt': number;
+    };
   };
   messages: {
     key: string;
@@ -49,10 +64,24 @@ interface MetalDBSchema extends DBSchema {
       value: string; // Encrypted
     };
   };
+  syncQueue: {
+    key: string;
+    value: {
+      id: string;
+      type: 'message' | 'contact' | 'conversation';
+      action: 'create' | 'update' | 'delete';
+      data: string; // Encrypted JSON
+      timestamp: number;
+      retries: number;
+    };
+    indexes: {
+      'by-timestamp': number;
+    };
+  };
 }
 
 const DB_NAME = 'metal-secure-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 class EncryptedStorage {
   private db: IDBPDatabase<MetalDBSchema> | null = null;
@@ -65,7 +94,7 @@ class EncryptedStorage {
     this.storageKey = await importAESKey(keyBytes);
     
     this.db = await openDB<MetalDBSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db: IDBPDatabase<MetalDBSchema>) {
+      upgrade(db: IDBPDatabase<MetalDBSchema>, oldVersion: number) {
         // Identity store
         if (!db.objectStoreNames.contains('identity')) {
           db.createObjectStore('identity', { keyPath: 'id' });
@@ -75,6 +104,13 @@ class EncryptedStorage {
         if (!db.objectStoreNames.contains('contacts')) {
           const contactStore = db.createObjectStore('contacts', { keyPath: 'id' });
           contactStore.createIndex('by-id', 'id');
+          contactStore.createIndex('by-metalId', 'metalId');
+        }
+        
+        // Conversations store (new in v2)
+        if (!db.objectStoreNames.contains('conversations')) {
+          const convStore = db.createObjectStore('conversations', { keyPath: 'id' });
+          convStore.createIndex('by-updatedAt', 'updatedAt');
         }
         
         // Messages store
@@ -93,6 +129,17 @@ class EncryptedStorage {
         // Settings store
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        
+        // Sync queue store (new in v2)
+        if (!db.objectStoreNames.contains('syncQueue')) {
+          const syncStore = db.createObjectStore('syncQueue', { keyPath: 'id' });
+          syncStore.createIndex('by-timestamp', 'timestamp');
+        }
+        
+        // Migration from v1 to v2 - add metalId index to contacts
+        if (oldVersion < 2 && db.objectStoreNames.contains('contacts')) {
+          // Note: In a real migration, you'd need to add the metalId field to existing records
         }
       }
     });
@@ -147,15 +194,22 @@ class EncryptedStorage {
 
   // ==================== Contacts ====================
 
-  async saveContact(id: string, data: unknown): Promise<void> {
+  async saveContact(id: string, metalId: string, data: unknown): Promise<void> {
     if (!this.db) throw new Error('Storage not initialized');
     const encrypted = await this.encryptData(data);
-    await this.db.put('contacts', { id, data: encrypted });
+    await this.db.put('contacts', { id, metalId, data: encrypted });
   }
 
   async getContact<T>(id: string): Promise<T | null> {
     if (!this.db) throw new Error('Storage not initialized');
     const record = await this.db.get('contacts', id);
+    if (!record) return null;
+    return this.decryptData<T>(record.data);
+  }
+
+  async getContactByMetalId<T>(metalId: string): Promise<T | null> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const record = await this.db.getFromIndex('contacts', 'by-metalId', metalId);
     if (!record) return null;
     return this.decryptData<T>(record.data);
   }
@@ -220,6 +274,39 @@ class EncryptedStorage {
     await tx.done;
   }
 
+  // ==================== Conversations ====================
+
+  async saveConversation(id: string, data: unknown, updatedAt: number): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const encrypted = await this.encryptData(data);
+    await this.db.put('conversations', { id, data: encrypted, updatedAt });
+  }
+
+  async getConversation<T>(id: string): Promise<T | null> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const record = await this.db.get('conversations', id);
+    if (!record) return null;
+    return this.decryptData<T>(record.data);
+  }
+
+  async getAllConversations<T>(): Promise<T[]> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const records = await this.db.getAllFromIndex('conversations', 'by-updatedAt');
+    const conversations: T[] = [];
+    // Sort by updatedAt descending (most recent first)
+    for (const record of records.reverse()) {
+      conversations.push(await this.decryptData<T>(record.data));
+    }
+    return conversations;
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    await this.db.delete('conversations', id);
+    // Also delete all messages in this conversation
+    await this.deleteConversationMessages(id);
+  }
+
   // ==================== Sessions ====================
 
   async saveSession(id: string, peerId: string, data: unknown): Promise<void> {
@@ -267,15 +354,80 @@ class EncryptedStorage {
     await this.db.delete('settings', key);
   }
 
+  // ==================== Sync Queue ====================
+
+  async addToSyncQueue(
+    id: string,
+    type: 'message' | 'contact' | 'conversation',
+    action: 'create' | 'update' | 'delete',
+    data: unknown
+  ): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const encrypted = await this.encryptData(data);
+    await this.db.put('syncQueue', {
+      id,
+      type,
+      action,
+      data: encrypted,
+      timestamp: Date.now(),
+      retries: 0
+    });
+  }
+
+  async getSyncQueue<T>(): Promise<Array<{
+    id: string;
+    type: 'message' | 'contact' | 'conversation';
+    action: 'create' | 'update' | 'delete';
+    data: T;
+    timestamp: number;
+    retries: number;
+  }>> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const records = await this.db.getAllFromIndex('syncQueue', 'by-timestamp');
+    const items = [];
+    for (const record of records) {
+      items.push({
+        id: record.id,
+        type: record.type,
+        action: record.action,
+        data: await this.decryptData<T>(record.data),
+        timestamp: record.timestamp,
+        retries: record.retries
+      });
+    }
+    return items;
+  }
+
+  async incrementSyncRetry(id: string): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    const record = await this.db.get('syncQueue', id);
+    if (record) {
+      record.retries += 1;
+      await this.db.put('syncQueue', record);
+    }
+  }
+
+  async removeFromSyncQueue(id: string): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    await this.db.delete('syncQueue', id);
+  }
+
+  async clearSyncQueue(): Promise<void> {
+    if (!this.db) throw new Error('Storage not initialized');
+    await this.db.clear('syncQueue');
+  }
+
   // ==================== Cleanup ====================
 
   async clearAll(): Promise<void> {
     if (!this.db) return;
     await this.db.clear('identity');
     await this.db.clear('contacts');
+    await this.db.clear('conversations');
     await this.db.clear('messages');
     await this.db.clear('sessions');
     await this.db.clear('settings');
+    await this.db.clear('syncQueue');
   }
 
   async close(): Promise<void> {

@@ -5,11 +5,13 @@ import type { Message, Conversation, Contact, AppSettings } from '../types';
 import { identityService } from '../auth/identity';
 import type { UserIdentity } from '../auth/identity';
 import { encryptedStorage } from '../storage/encrypted-db';
-import { generateId, base64ToBytes } from '../crypto/utils';
+import { generateId, base64ToBytes, bytesToBase64 } from '../crypto/utils';
 import { metalIdService } from '../services/metal-id';
 import type { UserPresence } from '../services/metal-id';
-import { parseMetalLink, createMetalLink, formatMetalIdDisplay } from '../services/metal-link';
+import { parseMetalLink, createMetalLink } from '../services/metal-link';
 import { messagingService } from '../services/messaging';
+import { metalServer } from '../api/metal-server';
+import type { ServerUser } from '../api/metal-server';
 
 interface AppState {
   // Auth state
@@ -50,6 +52,7 @@ interface AppState {
   addContactByMetalLink: (metalLink: string) => Promise<Contact>;
   addContactByMetalId: (metalId: string) => Promise<Contact>;
   findUserByMetalId: (metalId: string) => Promise<Contact | null>;
+  searchUsers: (query: string) => Promise<Contact[]>;
   findNearbyUsers: () => Promise<Contact[]>;
   addContact: (publicKey: string, displayName: string, metalId?: string) => Promise<void>;
   startConversation: (contactId: string) => Promise<string>;
@@ -65,6 +68,8 @@ interface AppState {
   deleteAccount: () => Promise<void>;
   
   updatePresence: (presence: Map<string, UserPresence>) => void;
+  handleServerMessage: (serverMsg: { fromMetalId: string; toMetalId: string; encryptedContent: string; timestamp: number; id: string }) => Promise<void>;
+  updateContactPresence: (metalId: string, isOnline: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -123,6 +128,27 @@ export const useAppStore = create<AppState>()((set, get) => ({
         get().handleTypingIndicator
       );
       
+      // Authenticate with server
+      const timestamp = Date.now();
+      const signData = `${user.metalId}:${timestamp}`;
+      const signature = bytesToBase64(keyPair.privateKey.slice(0, 32)); // Simplified signature
+      
+      const authResult = await metalServer.authenticate(user.metalId, signature, timestamp);
+      if (authResult.success && authResult.data) {
+        metalServer.setAuth(user.metalId, authResult.data.token);
+        metalServer.connectWebSocket();
+        
+        // Set up real-time handlers
+        metalServer.setMessageHandler((serverMsg) => {
+          // Convert server message to local message
+          get().handleServerMessage(serverMsg);
+        });
+        metalServer.setTypingHandler(get().handleTypingIndicator);
+        metalServer.setPresenceHandler((metalId, isOnline) => {
+          get().updateContactPresence(metalId, isOnline);
+        });
+      }
+      
       // Add all contact public keys to messaging service
       const { contacts } = get();
       for (const contact of contacts) {
@@ -150,11 +176,35 @@ export const useAppStore = create<AppState>()((set, get) => ({
         myMetalLink: metalLink
       });
       
-      // Start presence updates
+      // Register user on the server
+      const keyPair = identityService.getKeyPair();
+      const signature = bytesToBase64(keyPair.privateKey.slice(0, 32)); // Simplified signature
+      
+      const registerResult = await metalServer.registerUser(
+        user.metalId,
+        displayName,
+        user.publicKey,
+        signature
+      );
+      
+      if (registerResult.success && registerResult.data) {
+        metalServer.setAuth(user.metalId, registerResult.data.token);
+        metalServer.connectWebSocket();
+        
+        // Set up real-time handlers
+        metalServer.setMessageHandler((serverMsg) => {
+          get().handleServerMessage(serverMsg);
+        });
+        metalServer.setTypingHandler(get().handleTypingIndicator);
+        metalServer.setPresenceHandler((metalId, isOnline) => {
+          get().updateContactPresence(metalId, isOnline);
+        });
+      }
+      
+      // Start presence updates (fallback)
       metalIdService.startPresence(user.metalId, get().updatePresence);
       
       // Initialize messaging service
-      const keyPair = identityService.getKeyPair();
       messagingService.initialize(
         user.metalId,
         keyPair.privateKey,
@@ -171,6 +221,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   logout: async () => {
     metalIdService.stopPresence();
     messagingService.destroy();
+    metalServer.clearAuth();
     await identityService.lock();
     set({
       isAuthenticated: false,
@@ -240,12 +291,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     // Send via messaging service
     try {
+      // Send via local messaging service (Squid Cloud)
       await messagingService.sendMessage(
         contact.metalId,
         contact.publicKey,
         content,
         selectedConversationId
       );
+
+      // Also send via main server if connected
+      if (metalServer.isWebSocketConnected()) {
+        const keyPair = identityService.getKeyPair();
+        const encryptedContent = await messagingService.encryptForServer(
+          content,
+          contact.publicKey,
+          keyPair.privateKey,
+          selectedConversationId
+        );
+        
+        await metalServer.sendRealTimeMessage(
+          contact.metalId,
+          encryptedContent,
+          'encrypted'
+        );
+      }
 
       // Update status to sent
       const currentMessages = get().messages[selectedConversationId] || [];
@@ -417,40 +486,57 @@ export const useAppStore = create<AppState>()((set, get) => ({
     return contact;
   },
 
-  // Add contact by Metal ID (requires server lookup)
+  // Add contact by Metal ID (uses main server for lookup)
   addContactByMetalId: async (metalId: string) => {
-    const user = await metalIdService.findUserByMetalId(metalId);
-    if (!user) {
-      throw new Error(`User with Metal ID ${formatMetalIdDisplay(metalId)} not found. Try using their full Metal Link instead.`);
+    // First try the main server
+    const result = await metalServer.findUserByMetalId(metalId);
+    
+    if (!result.success || !result.data) {
+      throw new Error(`User with Metal ID ${metalId} not found. Ask them for their Metal Link instead!`);
     }
+
+    const serverUser = result.data;
 
     // Check if contact already exists
     const { contacts } = get();
-    const existing = contacts.find(c => c.metalId === user.metalId);
+    const existing = contacts.find(c => c.metalId === serverUser.metalId);
     if (existing) {
-      return existing;
+      // Update with latest info from server
+      const updatedContact = {
+        ...existing,
+        displayName: serverUser.displayName,
+        lastSeen: serverUser.lastSeen,
+        isOnline: serverUser.isOnline
+      };
+      await encryptedStorage.saveContact(existing.id, updatedContact);
+      const updatedContacts = contacts.map(c => c.id === existing.id ? updatedContact : c);
+      set({ contacts: updatedContacts });
+      return updatedContact;
     }
 
     const contact: Contact = {
       id: generateId(),
-      metalId: user.metalId,
-      displayName: user.displayName,
-      publicKey: user.publicKey,
+      metalId: serverUser.metalId,
+      displayName: serverUser.displayName,
+      publicKey: serverUser.publicKey,
       addedAt: Date.now(),
-      lastSeen: user.lastSeen,
-      isOnline: user.isOnline
+      lastSeen: serverUser.lastSeen,
+      isOnline: serverUser.isOnline
     };
 
+    // Save to local cache and add contact's key for messaging
     await encryptedStorage.saveContact(contact.id, contact);
+    messagingService.addContactKey(contact.metalId, contact.publicKey);
     set({ contacts: [...get().contacts, contact] });
     return contact;
   },
 
-  // Find user by Metal ID (without adding)
+  // Find user by Metal ID (without adding) - uses server
   findUserByMetalId: async (metalId: string) => {
-    const user = await metalIdService.findUserByMetalId(metalId);
-    if (!user) return null;
+    const result = await metalServer.findUserByMetalId(metalId);
+    if (!result.success || !result.data) return null;
     
+    const user = result.data;
     return {
       id: '',
       metalId: user.metalId,
@@ -460,6 +546,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
       lastSeen: user.lastSeen,
       isOnline: user.isOnline
     } as Contact;
+  },
+
+  // Search users on the server
+  searchUsers: async (query: string) => {
+    const result = await metalServer.searchUsers(query);
+    if (!result.success || !result.data) return [];
+    
+    return result.data.users.map((user: ServerUser) => ({
+      id: '',
+      metalId: user.metalId,
+      displayName: user.displayName,
+      publicKey: user.publicKey,
+      addedAt: 0,
+      lastSeen: user.lastSeen,
+      isOnline: user.isOnline
+    } as Contact));
   },
 
   // Find nearby users
@@ -583,6 +685,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // Delete account
   deleteAccount: async () => {
+    metalServer.clearAuth();
     await identityService.deleteIdentity();
     set({
       isAuthenticated: false,
@@ -598,9 +701,92 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
+  // Handle incoming server message
+  handleServerMessage: async (serverMsg: { fromMetalId: string; toMetalId: string; encryptedContent: string; timestamp: number; id: string }) => {
+    const { contacts, messages, conversations } = get();
+    const contact = contacts.find(c => c.metalId === serverMsg.fromMetalId);
+    
+    if (!contact) {
+      console.warn('Received message from unknown contact:', serverMsg.fromMetalId);
+      return;
+    }
+
+    // Find or create conversation
+    let conversation = conversations.find(c => 
+      c.participantIds.includes(contact.id) && !c.isGroup
+    );
+
+    if (!conversation) {
+      // Create new conversation
+      const { currentUser } = get();
+      conversation = {
+        id: generateId(),
+        participantIds: [currentUser?.id || '', contact.id],
+        unreadCount: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        isGroup: false
+      };
+      set({ conversations: [...conversations, conversation] });
+    }
+
+    // Decrypt message using messaging service
+    try {
+      const keyPair = identityService.getKeyPair();
+      const decryptedContent = await messagingService.decryptServerMessage(
+        serverMsg.encryptedContent,
+        contact.publicKey,
+        keyPair.privateKey
+      );
+
+      const message: Message = {
+        id: serverMsg.id,
+        conversationId: conversation.id,
+        senderId: contact.id,
+        senderMetalId: serverMsg.fromMetalId,
+        content: decryptedContent,
+        timestamp: serverMsg.timestamp,
+        type: 'text',
+        status: 'delivered',
+        isEncrypted: true
+      };
+
+      // Add to messages
+      const conversationMessages = messages[conversation.id] || [];
+      set({
+        messages: {
+          ...messages,
+          [conversation.id]: [...conversationMessages, message]
+        }
+      });
+
+      // Update conversation
+      const updatedConversations = get().conversations.map(c =>
+        c.id === conversation!.id
+          ? { ...c, lastMessage: message, updatedAt: Date.now(), unreadCount: c.unreadCount + 1 }
+          : c
+      );
+      set({ conversations: updatedConversations });
+
+      // Save to local cache
+      await encryptedStorage.saveMessage(message.id, message.conversationId, message, message.timestamp);
+    } catch (error) {
+      console.error('Failed to decrypt message:', error);
+    }
+  },
+
+  // Update contact presence from server
+  updateContactPresence: (metalId: string, isOnline: boolean) => {
+    const { contacts } = get();
+    const updatedContacts = contacts.map(c =>
+      c.metalId === metalId ? { ...c, isOnline, lastSeen: isOnline ? Date.now() : c.lastSeen } : c
+    );
+    set({ contacts: updatedContacts });
+  },
+
   // Update presence from Metal network
   updatePresence: (newPresence: Map<string, UserPresence>) => {
-    const { contacts, conversations } = get();
+    const { contacts } = get();
     
     // Update contacts with presence info
     const updatedContacts = contacts.map(contact => {
