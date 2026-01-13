@@ -368,7 +368,7 @@ class EncryptedStorage {
       id,
       type,
       action,
-      data: encrypted,
+      data: encrypted as string,
       timestamp: Date.now(),
       retries: 0
     });

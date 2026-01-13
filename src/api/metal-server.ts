@@ -1,8 +1,8 @@
 // Metal Server API Client
 // Main server for user registration, discovery, and message relay
 
-const API_BASE_URL = import.meta.env.VITE_METAL_SERVER_URL || 'https://metal-nu.vercel.app/api';
-const WS_URL = import.meta.env.VITE_METAL_WS_URL || 'wss://metal-nu.vercel.app/ws';
+const API_BASE_URL = import.meta.env.VITE_METAL_SERVER_URL || 'http://0.0.0.0:3001/api';
+const WS_URL = import.meta.env.VITE_METAL_WS_URL || 'ws://0.0.0.0:3001/ws';
 
 // ============ Types ============
 
@@ -500,13 +500,6 @@ class MetalServerClient {
    */
   isNetworkOnline(): boolean {
     return this.isOnline;
-  }
-
-  /**
-   * Check if WebSocket is connected
-   */
-  isWebSocketConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
   }
 }
 
